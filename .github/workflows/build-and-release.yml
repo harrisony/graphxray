@@ -1,127 +1,52 @@
-name: Build and Release
+name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
 
 jobs:
-  build-and-release:
+  build:
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-        cache: 'npm'
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
 
-    - name: Install dependencies
-      run: npm install
+      - name: Install dependencies
+        run: npm install
 
-    - name: Get current version
-      id: get_version
-      run: |
-        CURRENT_VERSION=$(node -p "require('./public/manifest.json').version")
-        echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
-        echo "Current version: $CURRENT_VERSION"
+      - name: Build
+        run: npm run build
 
-    - name: Increment version
-      id: increment_version
-      run: |
-        CURRENT_VERSION="${{ steps.get_version.outputs.current_version }}"
-        IFS='.' read -ra VERSION_PARTS <<< "$CURRENT_VERSION"
-        MAJOR=${VERSION_PARTS[0]}
-        MINOR=${VERSION_PARTS[1]}
-        PATCH=${VERSION_PARTS[2]}
-        NEW_PATCH=$((PATCH + 1))
-        NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
-        echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
-        echo "New version: $NEW_VERSION"
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
 
-    - name: Update manifest.json version
-      run: |
-        NEW_VERSION="${{ steps.increment_version.outputs.new_version }}"
-        sed -i "s/\"version\": \".*\"/\"version\": \"$NEW_VERSION\"/" public/manifest.json
-        echo "Updated manifest.json to version $NEW_VERSION"
-
-    - name: Update package.json version
-      run: |
-        NEW_VERSION="${{ steps.increment_version.outputs.new_version }}"
-        npm version $NEW_VERSION --no-git-tag-version
-        echo "Updated package.json to version $NEW_VERSION"
-
-    - name: Build project
-      run: npm run build
-
-    - name: Create zip file
-      run: |
-        cd build
-        zip -r ../graphxray-v${{ steps.increment_version.outputs.new_version }}.zip graphxray/
-        cd ..
-        echo "Created zip file: graphxray-v${{ steps.increment_version.outputs.new_version }}.zip"
-
-    - name: Commit version changes
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add public/manifest.json package.json package-lock.json
-        git commit -m "Bump version to ${{ steps.increment_version.outputs.new_version }}" || exit 0
-        git push
-
-    - name: Create Release
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: v${{ steps.increment_version.outputs.new_version }}
-        release_name: Graph X-Ray v${{ steps.increment_version.outputs.new_version }}
-        body: |
-          ## Graph X-Ray v${{ steps.increment_version.outputs.new_version }}
-          
-          ### Changes
-          - Automated release from commit ${{ github.sha }}
-          
-          ### Installation
-            - Extract the contents of the `.zip` file.
-            - Open your browser and navigate to
-                - Microsoft Edge: `edge://extensions`
-                - Google Chrome: `chrome://extensions`
-            - Enable "Developer mode" by toggling the switch (usually in the bottom left or top right corner).
-            - Click on "Load unpacked" and select the extracted folder.          
-
-        draft: false
-        prerelease: false
-
-    - name: Upload Release Asset
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./graphxray-v${{ steps.increment_version.outputs.new_version }}.zip
-        asset_name: graphxray-v${{ steps.increment_version.outputs.new_version }}.zip
-        asset_content_type: application/zip
-
-    - name: Output build information
-      run: |
-        echo "✅ Build completed successfully!"
-        echo "📦 Version: ${{ steps.increment_version.outputs.new_version }}"
-        echo "🏗️ Build artifacts created in build/graphxray/"
-        echo "📁 Zip file: graphxray-v${{ steps.increment_version.outputs.new_version }}.zip"
-        if [ "${{ github.event_name }}" == "push" ] && [ "${{ github.ref }}" == "refs/heads/main" ]; then
-          echo "🚀 Release created: https://github.com/${{ github.repository }}/releases/tag/v${{ steps.increment_version.outputs.new_version }}"
-        else
-          echo "ℹ️ This is a PR build - no release was created"
-        fi
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
