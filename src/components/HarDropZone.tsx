@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import {
   makeStyles,
   tokens,
@@ -57,6 +57,7 @@ export const HarDropZone = ({ onHarLoaded }: HarDropZoneProps) => {
   const styles = useStyles();
   const [isDragOver, setIsDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const processFile = useCallback(
     (file: File) => {
@@ -138,17 +139,20 @@ export const HarDropZone = ({ onHarLoaded }: HarDropZoneProps) => {
           </Text>
         </>
       )}
-      <label>
-        <Button appearance="primary" icon={<ArrowUploadRegular />}>
-          Browse file
-        </Button>
-        <input
-          type="file"
-          accept=".har,.json"
-          style={{ display: "none" }}
-          onChange={onFileInput}
-        />
-      </label>
+      <Button
+        appearance="primary"
+        icon={<ArrowUploadRegular />}
+        onClick={() => fileInputRef.current?.click()}
+      >
+        Browse file
+      </Button>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".har,.json"
+        style={{ display: "none" }}
+        onChange={onFileInput}
+      />
     </div>
   );
 };
