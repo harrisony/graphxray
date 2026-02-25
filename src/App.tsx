@@ -105,17 +105,18 @@ export default function App() {
   const [stack, setStack] = useState<CodeViewData[]>([]);
   const [processing, setProcessing] = useState<ProcessingState | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const abortRef = useRef(false);
+  const runIdRef = useRef(0);
 
   const processEntries = useCallback(
     async (harEntries: HarEntry[], lang: SnippetLanguage) => {
+      const runId = ++runIdRef.current;
+
       if (harEntries.length === 0) {
         setStack([]);
         setProcessing(null);
         return;
       }
 
-      abortRef.current = false;
       setStack([]);
       setProcessing({ total: harEntries.length, done: 0 });
 
@@ -123,7 +124,7 @@ export default function App() {
       let idx = 0;
 
       const worker = async () => {
-        while (idx < harEntries.length && !abortRef.current) {
+        while (idx < harEntries.length && runIdRef.current === runId) {
           const myIdx = idx++;
           const entry = harEntries[myIdx];
           try {
@@ -132,6 +133,7 @@ export default function App() {
           } catch {
             results[myIdx] = null;
           }
+          if (runIdRef.current !== runId) break;
           setProcessing((prev) =>
             prev ? { ...prev, done: prev.done + 1 } : prev
           );
@@ -141,7 +143,7 @@ export default function App() {
 
       const workers = Array.from({ length: CONCURRENCY }, () => worker());
       await Promise.all(workers);
-      setProcessing(null);
+      if (runIdRef.current === runId) setProcessing(null);
     },
     []
   );
@@ -214,7 +216,7 @@ export default function App() {
   }, [stack, snippetLanguage]);
 
   const handleClear = useCallback(() => {
-    abortRef.current = true;
+    runIdRef.current++;
     setStack([]);
     setEntries([]);
     setHarData(null);
